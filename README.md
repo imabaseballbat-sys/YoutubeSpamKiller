@@ -6,3 +6,10 @@ The limit is 9,800 comments and replies every day per client secrets file. The l
 This program is in beta, so there are still plenty of changes and bug fixes ahed!
 I am looking for help if anyone is intrested in helping develop this program
 That's all I have to say! Happy bot-terminating!
+
+
+
+
+
+                  <img width="534" height="534" alt="image" src="https://github.com/user-attachments/assets/f6812cb4-4ee8-4a3f-82eb-57a2a0c9adc1" />
+
