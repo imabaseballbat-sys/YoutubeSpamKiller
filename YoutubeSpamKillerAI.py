@@ -592,7 +592,7 @@ def main():
                 - Added AI to detect typos or bypasses and delete the comments
                 - Added "Verification Bypass" which bypasses Youtube's new AI Age verification feature by opening the video in a piped enviorment
                 - Verification Bypass also blocks ads due to the piped enviorment
-                - Increased quota limit from 9800 to 10000
+                - Increased quota limit from 9800 to 10000")
                 
                
 
