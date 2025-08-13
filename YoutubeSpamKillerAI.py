@@ -482,7 +482,7 @@ def main():
 
     
 
-    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS'  ")
+    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS', 'UPDATE LOG'  ")
     last_sweep = 0
 
     while True:
@@ -585,6 +585,15 @@ def main():
                     driver.get("https://www.youtube.com")
                     inject_piped_redirect(driver)
                     input("Verification bypass enabled. Press enter to terminate this process...")
+            elif cmd == "UPDATE LOG":
+                print(f"Changes in version 1.0.0 to 2.0.0:
+                - Fixed bug where keyword filter doesn't catch some words
+                - Fixed bug where you have to re enter your client secrets file every time you use the tool")
+                - Added AI to detect typos or bypasses and delete the comments
+                - Added "Verification Bypass" which bypasses Youtube's new AI Age verification feature by opening the video in a piped enviorment
+                - Verification Bypass also blocks ads due to the piped enviorment
+                - Increased quota limit from 9800 to 10000
+                
                
 
             
