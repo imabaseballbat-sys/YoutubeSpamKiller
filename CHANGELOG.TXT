@@ -1,0 +1,8 @@
+New changes in version 3.0.0 😤😮‍💨🤯:
+  Deepface facial recognition for extra security (Still in development so expect bugs) 📸✨🔐
+  GPT 4 and GPT 4.1 Added for more bot scanning so no pesky bots get in your comments ✅💸✌️
+  New reporting feature for other AI (Still in development so expect bugs) 🤑💸💵
+  Bug fixes 🐜
+  Comment translation so bots trying to cheat the system will vanish 🤯
+  Some more features to play around with when your bored 🥱
+Happy spam slaying 😤
