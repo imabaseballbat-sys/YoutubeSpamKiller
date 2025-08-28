@@ -10,18 +10,24 @@ import select
 import re
 import tkinter as tk
 from tkinter import messagebox, filedialog
+from datetime import datetime
 import hashlib
 import webbrowser
+import smtplib
+import json
+from email.message import EmailMessage
 import threading
 import random
-import pip
+import traceback
 import pandas as pd
 import pandas
+import subprocess
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 import requests
 import numpy as np
 from PIL import Image
+import tempfile
 from io import BytesIO
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -37,21 +43,272 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import os.path
-FILENAME = "/Users/gra/Documents/YoutubeSpamKillerAI/client_secrets_path.pickle"
+from cryptography.fernet import Fernet
+from termcolor import colored
+import socket
+import io
+from g4f.client import Client
+from g4f.Provider import You
+from g4f import ChatCompletion
+from g4f import get_model_and_provider
+import contextlib
+from deep_translator import GoogleTranslator
+from deepface import DeepFace
+import cv2
+from bs4 import BeautifulSoup
+from googlesearch import search
+import csv
+import paypalrestsdk
 
-if os.path.exists(FILENAME):
+
+TOKEN_PICKLE = "token.pickle"
+KEY_FILE = "encryption_key.txt"
+def get_or_create_key():
+    """Gets the key from the key file or creates a new one."""
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, 'rb') as key_file:
+            return key_file.read()
+    else:
+        key = Fernet.generate_key()
+        with open(KEY_FILE, 'wb') as key_file:
+            key_file.write(key)
+        return key
+
+key = get_or_create_key()
+test_data = {"message": "Hello, world!"}
+filepath = "test_file.pickle"
+temp_filepath = filepath + '.tmp'
+def save_credentials(creds):
+    token_bytes = pickle.dumps(creds)
+    fernet_key = get_or_create_key()
+    encrypted_token = Fernet(fernet_key).encrypt(token_bytes)
+
+    face_embedding = None
+    if os.path.exists("SpamKillerVerification.jpg"):
+        try:
+            embedding_obj = DeepFace.represent(img_path="SpamKillerVerification.jpg", model_name="Facenet", enforce_detection=False)
+            face_embedding = embedding_obj[0]["embedding"]
+            print(colored("🔐 Face embedding loaded from existing picture.", "green"))
+        except Exception as e:
+            print(colored(f"❌ Face embedding failed: {e}", "red"))
+
+    if face_embedding is None:
+        user_input = input(colored("For more security, take a picture of yourself? (yes/no):", "green"))
+        if user_input.strip().lower() == "yes":
+            print(colored("📸 Opening camera... Smile!", "blue"))
+            cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+            if not cap.isOpened():
+                print(colored("❌ Camera couldn't be opened!", "red"))
+                return
+            for _ in range(3):
+                ret, frame = cap.read()
+            if ret:
+                alpha = 1.5
+                beta = 65
+                frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
+                cv2.imwrite("SpamKillerVerification.jpg", frame)
+                cap.release()
+                print(colored("✅ Picture taken!", "green"))
+                try:
+                    embedding_obj = DeepFace.represent(img_path="SpamKillerVerification.jpg", model_name="Facenet", enforce_detection=False)
+                    face_embedding = embedding_obj[0]["embedding"]
+                    print(colored("🔐 Face embedding saved for verification.", "green"))
+                except Exception as e:
+                    print(colored(f"❌ Face embedding failed: {e}", "red"))
+                    print(colored("❌ Token not saved due to failed face verification.", "red"))
+                    return
+            else:
+                print(colored("❌ Failed to take picture.", "red"))
+                return
+
+    # Only save if face_embedding is present (or user said no)
+    if face_embedding is not None or user_input.strip().lower() == "no":
+        data_to_save = {"token": encrypted_token, "face_embedding": face_embedding}
+        temp_file = TOKEN_PICKLE + '.tmp'
+        with open(temp_file, 'wb') as token_file:
+            pickle.dump(data_to_save, token_file)
+            token_file.flush()
+            os.fsync(token_file.fileno())
+        os.rename(temp_file, TOKEN_PICKLE)
+        print("✅ Token saved successfully.")
+    else:
+        print(colored("❌ Token not saved due to failed face verification.", "red"))
+
+def load_credentials():
+    import traceback
+    if not os.path.exists(TOKEN_PICKLE):
+        return None
     try:
-        with open(FILENAME, "rb") as file:
+        with open(TOKEN_PICKLE, 'rb') as token_file:
+            data = pickle.load(token_file)
+        encrypted_token = data.get("token")
+        saved_face_embedding = data.get("face_embedding")
+        fernet_key = get_or_create_key()
+        creds = pickle.loads(Fernet(fernet_key).decrypt(encrypted_token))
+
+        if saved_face_embedding is not None:
+            # ...face verification logic...
+            pass
+
+        print("✅ Credentials loaded successfully.")
+        return creds
+    except Exception as e:
+        print(f"❌ Error loading token: {e!r}")  # Print the full exception object
+        traceback.print_exc()                    # Print the full traceback
+        # Only delete if it's a pickle or decryption error
+        if "pickle" in str(e).lower() or "decrypt" in str(e).lower():
+            if os.path.exists(TOKEN_PICKLE):
+                os.remove(TOKEN_PICKLE)
+            print("Corrupted token file deleted.")
+        else:
+            print("Token not loaded, but not deleted. Check error above.")
+        return None
+
+def load_credentials():
+    """Loads and decrypts credentials, checks face if required."""
+    if not os.path.exists(TOKEN_PICKLE):
+        return None
+    try:
+        with open(TOKEN_PICKLE, 'rb') as token_file:
+            data = pickle.load(token_file)
+        encrypted_token = data.get("token")
+        saved_face_embedding = data.get("face_embedding")
+        fernet_key = get_or_create_key()
+        creds = pickle.loads(Fernet(fernet_key).decrypt(encrypted_token))
+
+        # If face_embedding is set, verify current face
+        if saved_face_embedding:
+            print("🔐 Face verification required...")
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                print(colored("❌ Camera couldn't be opened!", "red"))
+                return None
+            ret, frame = cap.read()
+            if ret:
+                cv2.imwrite("CurrentVerification.jpg", frame)
+                cap.release()
+                try:
+                    current_embedding_obj = DeepFace.represent(img_path="CurrentVerification.jpg", model_name="Facenet")
+                    current_face_embedding = current_embedding_obj[0]["embedding"]
+                    # Compare embeddings (Euclidean distance)
+                    distance = np.linalg.norm(np.array(saved_face_embedding) - np.array(current_face_embedding))
+                    if distance > 10:  # Threshold, adjust as needed
+                        print(colored("❌ Face verification failed! Token not loaded.", "red"))
+                        return None
+                    else:
+                        print(colored("✅ Face verification passed!", "green"))
+                except Exception as e:
+                    print(colored(f"❌ Face verification error: {e}", "red"))
+                    return None
+            else:
+                print(colored("❌ Failed to take picture.", "red"))
+                return None
+
+        print("✅ Credentials loaded successfully.")
+        return creds
+    except Exception as e:
+        print(f"Error loading pickle file: {e}. The file may be corrupted.")
+        if os.path.exists(TOKEN_PICKLE):
+            os.remove(TOKEN_PICKLE)
+        return None
+
+# Your main script will call these functions as needed.
+# For example:
+# token = load_credentials()
+# if not token:
+#     # Prompt for authorization and then call save_credentials
+#     creds = flow.run_local_server(port=0)
+#     save_credentials(creds)
+#     token = creds
+# Encrypt and save
+encrypted_data = Fernet(key).encrypt(pickle.dumps(test_data))
+with open(temp_filepath, "wb") as f:
+    f.write(encrypted_data)
+os.rename(temp_filepath, filepath)
+def encrypt_token(token_data, key):
+    f = Fernet(key)
+    return f.encrypt(token_data)
+
+def decrypt_token(encrypted_data, key):
+    f = Fernet(key)
+    return f.decrypt(encrypted_data)
+# Load and decrypt
+
+# Helper function to encrypt and save a file
+def encrypt_and_save(obj, filename, key):
+    # This is a general example, your code may be different
+    f = Fernet(key)
+    pickled_obj = pickle.dumps(obj)
+    encrypted_obj = f.encrypt(pickled_obj)
+    
+    with open(filename, 'wb') as file:
+        file.write(encrypted_obj)
+        # Add these two lines to force the OS to write the file immediately
+        file.flush()
+        os.fsync(file.fileno())
+
+# Helper function to load and decrypt a file
+def load_and_decrypt(filepath, key):
+   # Load and decrypt
+    with open(filepath, "rb") as f:
+        encrypted_data = f.read()
+        decrypted_data = Fernet(key).decrypt(encrypted_data)
+        loaded_data = pickle.loads(decrypted_data)
+    return loaded_data
+        
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DeprecationWarning = 1
+def encrypt_token(token_data, key):
+    f = Fernet(key)
+    return f.encrypt(token_data)
+
+def decrypt_token(encrypted_data, key):
+    f = Fernet(key)
+    return f.decrypt(encrypted_data)
+
+REQUIRED_PACKAGES = [
+    'google-auth-oauthlib',
+    'google-api-python-client',
+    'requests',
+    'pandas',
+    'scikit-learn',
+    'numpy',
+    'Pillow',
+    'joblib',
+    'cryptography',
+    'termcolor',
+    'selenium',
+    'g4f',
+    'deepface',
+    'deep-translator',
+]
+
+def install_dependencies():
+    for package in REQUIRED_PACKAGES:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            print(f"Installing missing dependencies...")
+
+install_dependencies()
+
+CLIENT_SECRETS_PATH_PICKLE = os.path.join(SCRIPT_DIR, "client_secrets_path.pickle")
+
+if os.path.exists(CLIENT_SECRETS_PATH_PICKLE):
+    try:
+        with open(CLIENT_SECRETS_PATH_PICKLE, "rb") as file:
             path = pickle.load(file)
             print(f"Successfully loaded path from pickle: {path}")
     except (pickle.UnpicklingError, EOFError) as e:
-        print(f"Error loading pickle file: {e}. The file may be corrupted.")
-        os.remove(FILENAME)
+       
+        traceback.print_exc()
+        os.remove(CLIENT_SECRETS_PATH_PICKLE)
         print("Corrupted file has been deleted. Please run your main app again.")
 else:
     print("Pickle file not found.")
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    
 #_________________Image Feature Extractor_________________#
 class ImageFeatureExtractor(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -117,7 +374,8 @@ def custom_preprocessor(text):
         return ""
     typo_corrections = {
         'warnining': 'warning',
-        'warninng': 'warning'
+        'warninng': 'warning',
+        'warnnnnnnnin': 'warning'
     }
     processed_text = text.lower()
     for typo, correction in typo_corrections.items():
@@ -126,8 +384,6 @@ def custom_preprocessor(text):
     cleaned_text = re.sub(r'[^a-zA-Z0-9\s]', '', preprocessed_text)
     normalized_text = re.sub(r'\s+', ' ', cleaned_text).strip()
     return normalized_text
-
-# This function MUST also be in your live script.
 def extract_username_features(usernames):
     features = []
     for username in usernames:
@@ -137,7 +393,6 @@ def extract_username_features(usernames):
         features.append([length, int(has_numbers), has_uttp_keyword])
     return np.array(features)
 
-# --- Your main script code starts here ---
 
 # Load the AI model pipeline
 try:
@@ -148,7 +403,6 @@ except FileNotFoundError:
     print("Please make sure you have run your training script first.")
     exit()
 
-# --- Example of how to use the model with a DataFrame ---
 SPAM_THRESHOLD = 0.5
 
 # NOTE: The DataFrame MUST contain all columns the model was trained on.
@@ -193,17 +447,19 @@ print(f"Processed clean comment: '{processed_clean}'")
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 SUSPICIOUS_KEYWORDS = [
     "uttp", "tap_me_for_free_rbx", "free robux", "tap me", "click here", "free rbx", "1st warning troll", "yfga", "zntp", "don’t translate...😾",
-    "1st warning troll! My video is better than this incoherent & soulless goyslop UTTP's far better than whatever this nonsense is!",
-    "dont read my name", "dontreadmypicture", "don't read my name", 
+    "1st warning troll! my video is better than this incoherent & soulless goyslop uttp's far better than whatever this nonsense is!",
+    "dont read my name", "dontreadmypicture", "don't read my name", "don’t translate...😾 dago saaqootah addat, ku sorkocô baxi atka soolele. dubuh yan giti tet kalaloonuh yi chaanaal sabiskiraayib abaanama……. . ……"
 
 
 
 ]
-
-quota_used = 0
-DAILY_QUOTA_LIMIT = 9900
+DeprecationWarning = 1
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIENT_SECRETS_PATH_PICKLE = os.path.join(SCRIPT_DIR, "client_secrets_path.pickle")
 TOKEN_PICKLE = os.path.join(SCRIPT_DIR, "token.pickle")
+KEY_FILE = os.path.join(SCRIPT_DIR, 'encryption_key.txt')
+DAILY_QUOTA_LIMIT = 10000
+quota_used = 0
 
 def show_setup_instructions():
     root = tk.Tk()
@@ -244,50 +500,70 @@ def select_client_secrets_file():
     root.destroy()
     return file_path
 def get_authenticated_service():
-    # Attempt to load the path to client_secrets.json
-    client_secrets_path = None
-    if os.path.exists(CLIENT_SECRETS_PATH_PICKLE):
-        try:
-            with open(CLIENT_SECRETS_PATH_PICKLE, "rb") as path_file:
-                client_secrets_path = pickle.load(path_file)
-        except (pickle.UnpicklingError, EOFError):
-            print("❌ Corrupted client_secrets_path.pickle file detected. Deleting.")
-            os.remove(CLIENT_SECRETS_PATH_PICKLE)
+    if not os.path.exists(KEY_FILE):
+        key = Fernet.generate_key()
+        with open(KEY_FILE, 'wb') as key_file:
+            key_file.write(key)
+        print(colored("🔑 New encryption key created.", "yellow"))
 
-    # If the path is not found, prompt the user to select it
+    with open(KEY_FILE, 'rb') as key_file:
+        key = key_file.read()
+
+    client_secrets_path = None
+    
+    if os.path.exists(CLIENT_SECRETS_PATH_PICKLE) and os.path.getsize(CLIENT_SECRETS_PATH_PICKLE) > 0:
+        try:
+            with open(CLIENT_SECRETS_PATH_PICKLE, "rb") as file:
+                path = pickle.load(file)
+                print(f"Successfully loaded path from pickle: {path}")
+        except (pickle.UnpicklingError, EOFError) as e:
+            traceback.print_exc()
+            os.remove(CLIENT_SECRETS_PATH_PICKLE)
+            print("Corrupted file has been deleted. Please run your main app again.")
+    else:
+        print("Pickle file not found or is empty.")
+    
     if not client_secrets_path or not os.path.exists(client_secrets_path):
         show_setup_instructions()
         client_secrets_path = select_client_secrets_file()
         if not client_secrets_path:
-            print("❌ No file selected. Exiting.")
+            print(colored("❌ No file selected. Exiting.", "red"))
             sys.exit(1)
-        # Save the path for the next run
-        with open(CLIENT_SECRETS_PATH_PICKLE, "wb") as path_file:
-            pickle.dump(client_secrets_path, path_file)
-    
-    # Now, with a valid client_secrets_path, we can get or create the token
+        encrypt_and_save(client_secrets_path, CLIENT_SECRETS_PATH_PICKLE, key)
+
     creds = None
     if os.path.exists(TOKEN_PICKLE):
-        with open(TOKEN_PICKLE, "rb") as token:
-            creds = pickle.load(token)
-    
+        try:
+            creds = load_and_decrypt(TOKEN_PICKLE, key)
+        except Exception as e:
+            print(colored(f"❌ Error loading token: {e}. Deleting corrupted token file.", "red"))
+            traceback.print_exc()
+            print("Step 1: Credentials object:", creds)
+            token_bytes = pickle.dumps(creds)
+            print("Step 2: Pickled credentials (bytes):", token_bytes)
+
+            fernet_key = get_or_create_key()
+            encrypted_token = Fernet(fernet_key).encrypt(token_bytes)
+            print("Step 3: Encrypted token:", encrypted_token)
+
+    # ... (rest of the save function, including face verification and final save)
+            os.remove(TOKEN_PICKLE)
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            print(colored("🔄 Token expired. Refreshing...", "cyan"))
             creds.refresh(Request())
         else:
+            print(colored("🔒 No valid token found. Authorizing...", "yellow"))
             flow = InstalledAppFlow.from_client_secrets_file(client_secrets_path, SCOPES)
             creds = flow.run_local_server(port=0)
-            
-        with open(TOKEN_PICKLE, "wb") as token:
-            pickle.dump(creds, token)
-            
+
+    print(colored("💾 Saving new token...", "cyan"))
+    save_credentials(creds)
+    print(colored("✅ Token saved successfully.", "green"))
+
+        
     return build("youtube", "v3", credentials=creds)
-
-# Call the function to get the authenticated service
-
-
-
-
 
 def get_channel_id(youtube):
     request = youtube.channels().list(part="id", mine=True)
@@ -306,7 +582,7 @@ def get_all_video_ids(youtube, channel_id):
             part="id",
             channelId=channel_id,
             order="date",
-            maxResults=9900,
+            maxResults=10000,
             type="video",
             pageToken=next_page_token
         )
@@ -340,7 +616,7 @@ def fetch_comments(youtube, video_id):
     request = youtube.commentThreads().list(
         part="snippet",
         videoId=video_id,
-        maxResults=9900
+        maxResults=10000
     )
     response = request.execute()
     quota_used += 1
@@ -364,7 +640,7 @@ def fetch_replies(youtube, parent_id):
     request = youtube.comments().list(
         part="snippet",
         parentId=parent_id,
-        maxResults=9900
+        maxResults=10000
     )
     response = request.execute()
     quota_used += 1
@@ -389,7 +665,6 @@ def delete_comment(youtube, comment_id):
         quota_used += 50
         print(f"🧨 Deleted comment ID: {comment_id}")
         
-            
         
 
     except Exception as e:
@@ -398,7 +673,7 @@ def delete_comment(youtube, comment_id):
 def is_bot(author, comment_text, profile_image_url):
     author_lower = author.lower()
     text_lower = comment_text.lower()
-    allowed_patterns = [r'\bauttp\b', r'\banti-uttp\b']
+    allowed_patterns = [r'\bauttp\b', r'\banti-uttp\b', r'\banti uttp\b', r'\banti_uttp\b']
     for pattern in allowed_patterns:
         if re.search(pattern, author_lower) or re.search(pattern, text_lower):
             return False
@@ -410,29 +685,60 @@ def is_bot(author, comment_text, profile_image_url):
             return True
     return False
 
-
 def run_spam_sweep(youtube, channel_id, scan_all=False):
     try:
         video_ids = get_all_video_ids(youtube, channel_id) if scan_all else [get_latest_video_id(youtube, channel_id)]
         for video_id in video_ids:
             print(f"🔍 Scanning video: {video_id}")
             comments = fetch_comments(youtube, video_id)
+            
+            def openai_check(comment_text, profile_image_url):
+                prompt = f"Determine if this is spam: '{comment_text, profile_image_url}'and translate it to english if it isnt in english already and then scan it also be as quick as you can between scanning without sacrificing accuracy one last thing if a comment is spam always say yes also the the profile image url is their profile picture so scan that for potentially inapropriate stuff (yes/no)"
+                response = ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": prompt}]
+                    )
+                answer = str(response).lower()
+                print(response)
+                return "yes" in answer
+            
+            def openai_check4(comment_text, profile_image_url):
+                prompt = f"Determine if this is spam: '{comment_text, profile_image_url}' and translate it to english if it isnt in english already and then scan it also be as quick as you can between scanning without sacrificing accuracy one last thing if a comment is spam always say  just yes nothing else one word also the the profile image url is their profile picture so scan that for potentially inapropriate stuff(yes/no)"
+                response = ChatCompletion.create(
+                    model="gpt-4.1",
+                    messages=[{"role": "user", "content": prompt}]
+                    )
+                answer = str(response).lower()
+                print(response)
+                return "yes" in answer
+            
+            
+
             for author, comment_text, comment_id, profile_image_url in comments:
                 
-                
                 # --- This is the correct Hybrid Detection Logic ---
-        
+                translated = GoogleTranslator(source='auto', target='es'.translate("{comment_text}"))
                 # 1. First, check your existing keyword filter (the fast option)
                 if is_bot(author, comment_text, profile_image_url):
                     print(f"🚨 Bot detected by keyword filter: {author} — {comment_text}")
                     delete_comment(youtube, comment_id)
                     time.sleep(1)
-                else:
+                if openai_check(comment_text, profile_image_url):
+                    if openai_check(comment_text, profile_image_url):
+                        print(f"🚨 Bot detected by OpenAI: {author} — {comment_text}")
+                        delete_comment(youtube, comment_id)
+                if openai_check4(comment_text, profile_image_url):
+                    if openai_check4(comment_text, profile_image_url):
+                        print(f"🚨 Bot detected by OpenAI 4.1: {author} - {comment_text}")
+                        delete_comment(youtube, comment_id)
+                
+               
+                  
+                
                     # 2. If not a keyword bot, run the AI check
-            
-                    
+          
                     # Create the DataFrame for the AI model with all features
-                    comment_data = pd.DataFrame({
+                        comment_data = pd.DataFrame({
                         'comment_text': [comment_text],
                         'username': [author],
                         'profile_pic_url': [profile_image_url] 
@@ -444,17 +750,80 @@ def run_spam_sweep(youtube, channel_id, scan_all=False):
               
                     if prediction[0] == 1:
                         print(f"🚨 Bot detected by AI model: {author} — {comment_text}")
+                        # FIX 2: Added a print statement to show raw confidence
+                        print(f"Comment: {comment_text} | Raw Confidence: {prediction_proba}")
                         delete_comment(youtube, comment_id)
                         time.sleep(1)   
+                        if prediction_proba >= 0.7:
+                            print("🚨 Spam probability high, reporting comment and channel...")
+                            try:
+                                youtube.comments().reportabuse(
+                                id=comment_id,
+                                abuseType = 'SPAM',
+                                notes = 'Spammmm comment'                                                       
+                                ).execute()
+                                print("✅ Comment reported sucsessfully, reporting channel...")
+                                DRY_RUN = False
+                                spam_channels_queue = ["{channel_id}"]
+                                print("Please select your browser:" \
+                                "1 = Chrome... " \
+                                "2 = FireFox... " \
+                                "3 = Safari... ")
+
+                                choice = input("Enter choice 1/2/3...")
+
+                                if choice == "1":
+                                    driver = webdriver.Chrome()
+                                elif choice == "2":
+                                    driver = webdriver.Firefox()
+                                elif choice == "3":
+                                    driver = webdriver.Safari()
+                                else:
+                                    print("Invalid choice. Please try again")
+                                def report_channel(channel_id):
+                                    url = "https://www.youtube.com/@{username}"
+                                    driver.get(url)
+                                    time.sleep(random.uniform(3,6))
+
+
+                                    try:
+                                        menu_button = driver.find_element(By.XPATH, "//yt-icon-button[@id='button' or @aria-label='More actions']")
+                                        menu_button.click()
+                                        time.sleep(random.uniform(2,4))
+                                        if DRY_RUN:
+                                            print(f"Would normally report {channel_id}")
+                                        else:
+                                            spam_checkbox = driver.find_element(By.XPATH, "//tp-yt-paper-checkbox[@name='SPAM_OR_MISLEADING']")
+                                            spam_checkbox.click()
+                                            time.sleep(random.uniform(1,2))
+                                            submit_button = driver.find_element(By.XPATH, "//yt-button-renderer[@id='submit-buttom']")
+                                            submit_button.click()
+                                            print(f"✅ Channel {channel_id} reported")
+                                    except Exception as e:
+                                        print(f"❌ Error reporting channel {channel_id}")
+                                        traceback.print_exc()
+
+                                for cid in spam_channels_queue:
+                                    report_channel(cid)
+                                driver.quit()
+                            except Exception as e:
+                                print("❌ Failed to report comment")
+                                traceback.print_exc()
+                    
+                   
+                        
+    except Exception as e:
+        print(f"❌ Error during sweep: {e}")
+        traceback.print_exc()
                     
         print(f"✅ Sweep done! Quota used: {quota_used} / {DAILY_QUOTA_LIMIT}\n")
-        print(f"Comment: {comment_text} | Raw Confidence: {prediction_proba}")
     except (HttpError, BrokenPipeError, ConnectionResetError) as e:
         print(f"💥 Network error: {e}. Retrying in 5 seconds...")
         time.sleep(5)
         run_spam_sweep(youtube, channel_id, scan_all)
     except Exception as e:
         print(f"❌ Error during sweep: {e}")
+        traceback.print_exc()
 def main():
     print(r"""
           _______          _________          ______   _______ 
@@ -474,15 +843,17 @@ def main():
 
     youtube = get_authenticated_service()
     channel_id = get_channel_id(youtube)
-
     print("\n🤖 Choose scan mode:")
     print("1️⃣  Latest video only")
     print("2️⃣  All videos (slower, more thorough)")
-    scan_all = input("Enter 1 or 2: ").strip() == "2"
+    print("3️⃣  Specific video")
+    print("4️⃣  Enter a video id")
+    print("5️⃣  Enter a channel id")
+    scan_all = input("Enter 1, 2, 3, 4, or 5: ").strip() == "2"
 
     
 
-    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS', 'UPDATE LOG'  ")
+    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS', 'ANTI GRAVITY'  ")
     last_sweep = 0
 
     while True:
@@ -490,6 +861,7 @@ def main():
         if i:
             cmd = sys.stdin.readline().strip().upper()
             if cmd == "DELETE SPAM":
+                
                 run_spam_sweep(youtube, channel_id, scan_all)
                 last_sweep = time.time()
             elif cmd == "EXIT":
@@ -497,6 +869,12 @@ def main():
                 break
             elif cmd == "QUOTA":
                 print(f"Currently, you are using {quota_used}. You still have {DAILY_QUOTA_LIMIT - quota_used} left for today 😁")
+            elif cmd == "ABISGABISFLABIS":
+                print("What")
+            elif cmd == "I LOVE UTTP":
+                print("GET REKT UTTP SCUMMER")
+            elif cmd == "IUDF":
+                print("I really don't understand")
             elif cmd == "ABOUT":
                 print("This is a YouTube Spam Killer script designed to help you clean up spammy comments on your channel. It uses the YouTube Data API to fetch comments and delete those that match suspicious patterns.")
             elif cmd == "JOKE":
@@ -515,6 +893,8 @@ def main():
                     "Why did the tomato turn red? Because it saw the salad dressing! 😂",
                     "What do you call cheese that isn't yours? Nacho cheese! 😂",
                     "9 + 10 = 21! Just kidding, it's 19! 😂",
+                    "baller"
+
 
                     
                 ]
@@ -524,6 +904,173 @@ def main():
             
                 dice_roll = random.randint(1, 6)
                 print(f"You rolled a {dice_roll} 🎲")
+            elif cmd == "LOCKED: $MONEY PRINTER$ locked":
+                print("💸 Money printer goes brrrrr... 💸")
+                time.sleep(5)
+                print("Keep this program open to help keep your channel safe from bots 🤑✌️")
+                def show_paypal_instructions():
+                    root = tk.Tk()
+                    root.withdraw()
+                    top = tk.Toplevel(root)
+                    top.withdraw()
+                    instructions = """
+Welcome to YouTube Spam Killer Setup Money Printer! 🎉
+
+To start, you need a client_id and client_secret code to get the Money Printer working! Steps are below on how to get it 😁:
+
+How to get your client_id and client_secret:
+
+1️⃣ Go to Paypal Account creator: https://www.paypal.com/us/webapps/mpp/account-selection
+2️⃣ Create a new buisness account.
+3️⃣ Go to developer.
+4️⃣ Go to API/SDKs.
+5️⃣ Find your client_id and client_secret.
+6️⃣ Select the client_secrets and client_id file when prompte in the terminal.
+
+Type them in when prompted in the terminal.
+"""
+                    messagebox.showinfo("Setup Instructions", instructions, parent=top)
+                    top.destroy()
+                    root.destroy()
+                paypalrestsdk.configure({
+                    "mode": "sandbox",
+                    "client_id": input("Enter your Paypal Buisness Client ID:"),
+                    "client_secret": input("Enter your Paypal Buisness Client secret:")
+                })
+                payment = paypalrestsdk.Payment({
+                    "intent": "sale",
+                    "payer": {"payment_method": "paypal"},
+                    "transactions": [{
+                        "amount": {
+                            "total": "300.00",
+                            "currency": "USD"
+                        },
+                        "description": "1000 Client leads. Improve your buisness with a client lead package!"
+                    }],
+                    "redirect_urls": {
+                        "return_url": "http://localhost:3000/payment/execute",
+                        "cancel_url": "http://localhost:3000/cancel"
+                    }
+                })
+                def find_emails(query, num_results=10):
+                    emails = set()
+                    for url in search(query, num_results=num_results):
+                        try:
+                            # Ensure the URL is valid (starts with http)
+                            if not url.startswith("http"):
+                                print(f"Skipping invalid URL: {url}")
+                                traceback.print_exc()
+                                continue
+                            page = requests.get(url, timeout=5)
+                            soup = BeautifulSoup(page.text, "html.parser")
+                            
+                            found = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", soup.text)
+                            for email in found:
+                                emails.add(email)
+                        except Exception as e:
+                            print(f"Error fetching {url}: {e}")
+                            traceback.print_exc()
+                            continue
+                    return emails
+           
+                
+                LEADS_FILE = "data/leads.csv"
+                def openai_lead_detector(comment_text):
+                    prompt = f"You are a lead generation bot :) . Find potential buisness oppurtinities if they seem to be fair leads. A buisness oppurtinity is someone who is searching for a specific service or product, looking to hire someone, looking for a partnership/collaberation, showing intrest in a niche topic that could make some cash 💰. Return 'YES' if you find an oppurtinuty :) Also translate comments if they arent in english already :)"
+                    response = ChatCompletion.create(
+                        model="gpt-4.1",
+                        messages=[{"role": "user", "content": prompt}]
+                        )
+                def save_lead(comment_text, gpt_response):
+                    lead = {
+                        "comment": comment_text,
+                        "gpt_response": gpt_response
+                    }
+                    df = pd.DataFrame([lead])
+                    try:
+                        exsisting_df = pd.read_csv(LEADS_FILE)
+                        df = pd.concat([exsisting_df, df], ignore_index=True)
+                    except FileNotFoundError:
+                        pass
+                    df.to_csv(LEADS_FILE, index=False)
+                    print("✅ Lead saved!")
+                def run_lead_bot(comments):
+                    for c in comments:
+                        author2, comment_text2, comment_id2, profile_image_url2 = c
+                        if openai_lead_detector(comment_text2):
+                            result = openai_lead_detector(c)
+                            if "YES" in result.lower():
+                                save_lead(c, result)
+                            else:
+                                print("Lead not found")
+                            gpt_response = openai_lead_detector(comment_text2)
+                            save_lead(comment_text2, gpt_response)
+                            print(colored(f"💸 Lead found and saved 💸"))
+                def generate_query():
+                    prompt = f"Generate a google search query to find potential leads for a buisness that does web design, web development, app development, seo, digital marketing, graphic design, video editing, 3d modelling, 3d animation, ai services etc. The query should be in english and should be specific to finding potential clients or buisness oppurtinities. The query should not be too broad or too narrow. The query should be in the format of a question. The query should not contain any special characters or punctuation. The query should be concise and to the point. The query should not contain any personal information or sensitive data. The query should not contain any negative or harmful language. The query should not contain any spammy or clickbait language. The query should not contain any misleading or false information. The query should not contain any copyrighted material or trademarks. The query should not contain any illegal or unethical content. The query should be professinal but very persuasive and use psyology tricks to help improve the chances of getting a deal"
+                    response = ChatCompletion.create(
+                        model="gpt-4.1",
+                        messages=[{"role": "user", "content": prompt}]
+                        )
+                def generate_email_contents():
+                    prompt = f"Imagine this: You are a lawyer who is trying to get the judge to rule in your favor. But instead of a lawyer, you are a buisnessman trying to convince a company or buisness to buy leads from you. Assume that they won't care one second unless it looks legitamate and a good deal. Try your absolute best to convince them to buy your leads and you are allowed to use psycology tricks and tactics but make sure that whatever you say is ethical and professinal."
+                    response = ChatCompletion.create(
+                        model="gpt-4.1",
+                        messages=[{"role": "user", "content": prompt}]
+                        )
+                AI_RESSPONSE = generate_email_contents()
+                query = generate_query()
+                emails = find_emails(query, num_results=20)
+                EMAIL_ADRESS = find_emails('"contact", "Buisness", "@gmail.com"')
+                def email_leads():
+                    gpt_response = openai_lead_detector(comment_text)
+                    try:
+                        clients_df = pd.read_csv("data/clients.csv")
+                    except FileNotFoundError:
+                        print("No client found")
+                        return
+                    industry = "Unknown"
+                    if "," in gpt_response:
+                        parts = gpt_response.split(",")
+                        if len(parts) > 1:
+                            industry = parts[1].strip()
+                    matching_clients = clients_df[clients_df['industry'].str.contains(industry, case=False, na=False)]
+                    if matching_clients.empty:
+                        print(colored("❌ No matching clients found for lead", "red"))
+                        return
+                    for _, client in matching_clients.iterrows():
+                        msg = EmailMessage()
+                        msg['subject'] = f"New lead found in your industry!: {industry}"
+                        
+                        msg['from'] = input("Please enter an email adress that is NOT your personal email adress: ")
+                        msg['to'] = EMAIL_ADRESS
+                        msg.set_content(f"Dear {client['name']},\n\n{AI_RESSPONSE}")
+                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                            smtp.login(EMAIL_ADRESS,) # Email password or app password)
+                            smtp.send_message(msg)
+                            print(colored(f"✅ Email sent to {client['name']} at {client['email']}", "green"))
+                    clients = []
+                    with open("leads.csv", newline="", encoding="utf-8") as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        for row in reader:
+                            clients.append({"name": row["name"], "email": row["email"]})
+                    emailed_clients = set()
+                    for client in clients:
+                        if client['email'] in emailed_clients:
+                            #Skip duplicate email to the same client
+                            continue
+
+                    
+                # Email leads to clients 
+
+                    
+
+
+
+             
+
+                
+                
           
             elif cmd == "RANDOM WEBSITE":
                 random_websites = [
@@ -546,6 +1093,8 @@ def main():
             
             elif cmd == "DARLING HOLD MY HAND":
                 print("Nothing beats a Jet2 Holiday 😂")
+            
+            
 
             elif cmd == "SCHLEP":
                 print("Bro is a legend. Roblox is terrible right now")
@@ -584,20 +1133,18 @@ def main():
                     driver.execute_script(js_code)
                     driver.get("https://www.youtube.com")
                     inject_piped_redirect(driver)
-                    input("Verification bypass enabled. Press enter to terminate this process...")
-            elif cmd == "UPDATE LOG":
-                print(f"Changes in version 1.0.0 to 2.0.0:
-                - Fixed bug where keyword filter doesn't catch some words
-                - Fixed bug where you have to re enter your client secrets file every time you use the tool")
-                - Added AI to detect typos or bypasses and delete the comments
-                - Added "Verification Bypass" which bypasses Youtube's new AI Age verification feature by opening the video in a piped enviorment
-                - Verification Bypass also blocks ads due to the piped enviorment
-                - Increased quota limit from 9800 to 10,000")
-                
-               
-
-            
-                
+            elif cmd == "CHANGELOG":
+                print(colored("New changes in version 3.0.0:", "orange"))
+                print(colored("Added 3rd and 4th layer of spam detection so absolutely no bots get by 😁", "blue"))
+                print(colored("Added language translation so bots trying to cheat the system still get caught 🍭", "cyan"))
+                print(colored("Added a feature where the bot promotes itself on different programs ⌨️", "green"))
+                print(colored("Added some more cool features to pass the time while you are bored 😺", "yellow"))
+                print(colored("Added a new GUI 👀✨", "purple"))
+                print(colored("Added some bug fixes in 🐛", "red"))
+                print(colored("Added a new feature to report channels and spam comments for max bot destruction 💀", "magenta"))
+                print(colored("Added facial recognition to help encrypt your tokens 🔐", "yellow"))
+            elif cmd == "ANTIGRAVITY":
+                import antigravity
         if time.time() - last_sweep >= 600:
             run_spam_sweep(youtube, channel_id, scan_all)
             last_sweep = time.time()
