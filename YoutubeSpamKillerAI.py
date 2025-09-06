@@ -60,7 +60,6 @@ from googlesearch import search
 import csv
 import paypalrestsdk
 
-
 TOKEN_PICKLE = "token.pickle"
 KEY_FILE = "encryption_key.txt"
 def get_or_create_key():
@@ -448,7 +447,8 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 SUSPICIOUS_KEYWORDS = [
     "uttp", "tap_me_for_free_rbx", "free robux", "tap me", "click here", "free rbx", "1st warning troll", "yfga", "zntp", "don’t translate...😾",
     "1st warning troll! my video is better than this incoherent & soulless goyslop uttp's far better than whatever this nonsense is!",
-    "dont read my name", "dontreadmypicture", "don't read my name", "don’t translate...😾 dago saaqootah addat, ku sorkocô baxi atka soolele. dubuh yan giti tet kalaloonuh yi chaanaal sabiskiraayib abaanama……. . ……"
+    "dont read my name", "dontreadmypicture", "don't read my name", "don’t translate...😾 dago saaqootah addat, ku sorkocô baxi atka soolele. dubuh yan giti tet kalaloonuh yi chaanaal sabiskiraayib abaanama……. . ……",
+    "i make better content", 
 
 
 
@@ -669,6 +669,7 @@ def delete_comment(youtube, comment_id):
 
     except Exception as e:
         print(f"⚠️ Failed to delete comment {comment_id}: {e}")
+        traceback.print_exc()
 
 def is_bot(author, comment_text, profile_image_url):
     author_lower = author.lower()
@@ -853,7 +854,7 @@ def main():
 
     
 
-    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS', 'ANTI GRAVITY'  ")
+    print("🛡️ Auto-sweep every 10 mins. Type 'DELETE SPAM', 'EXIT', 'QUOTA', 'JOKE', 'RANDOM WEBSITE', 'DICE', 'ABOUT', 'ADD BANNED', 'VERIFICATION BYPASS', 'ANTI GRAVITY', 'REPEAT SPAM SWEEP', 'DOWNLOAD ALL FILES', 'VIDEO MANAGER',  ")
     last_sweep = 0
 
     while True:
@@ -1137,14 +1138,85 @@ Type them in when prompted in the terminal.
                 print(colored("New changes in version 3.0.0:", "orange"))
                 print(colored("Added 3rd and 4th layer of spam detection so absolutely no bots get by 😁", "blue"))
                 print(colored("Added language translation so bots trying to cheat the system still get caught 🍭", "cyan"))
-                print(colored("Added a feature where the bot promotes itself on different programs ⌨️", "green"))
+               
                 print(colored("Added some more cool features to pass the time while you are bored 😺", "yellow"))
-                print(colored("Added a new GUI 👀✨", "purple"))
+                
                 print(colored("Added some bug fixes in 🐛", "red"))
                 print(colored("Added a new feature to report channels and spam comments for max bot destruction 💀", "magenta"))
                 print(colored("Added facial recognition to help encrypt your tokens 🔐", "yellow"))
             elif cmd == "ANTIGRAVITY":
                 import antigravity
+            elif cmd == "REPEAT SPAM SWEEP":
+                sweep_repeated = input("🔎 How many times would you like to repeat the sweep")
+                if sweep_repeated.isdigit():
+                    print(colored("Sweep running {sweep_repeated} times!", "green"))
+                    for _ in range(int(sweep_repeated)):
+                        run_spam_sweep()
+                    return
+                else:
+                    print("❌ Invalid number. Please try again")
+                    return   
+            elif cmd == "PROGRAM LANGUAGE":
+                print("This program was made with python :)")
+            
+            elif cmd == "DOWNLOAD ALL FILES":
+                urls_to_download = {
+    "README.md": "https://github.com/imabaseballbat-sys/YoutubeSpamKiller/raw/main/README.md",
+    "LICENSE": "https://github.com/imabaseballbat-sys/YoutubeSpamKiller/raw/main/LICENSE",
+    "CHANGELOG.TXT": "https://github.com/imabase...aller/raw/main/CHANGELOG.TXT",
+    "spam_killer_model_tuned.joblib": "https://github.com/imabaseballbat-sys/YoutubeSpamKiller/blob/main/spam_killer_model_tuned.joblib"
+}
+
+# Use the correct file mode ('w' for text files) and iterate through the URLs
+                for filename, url in urls_to_download.items():
+                    try:
+        # Request the raw content from GitHub
+                        response = requests.get(url)
+                        response.raise_for_status()  # Raise an exception for bad status codes
+
+        # Check if the content is successfully retrieved
+                        if response.status_code == 200:
+                            with open(filename, 'w', encoding='utf-8') as f:
+                                f.write(response.text)
+                            print(f"File '{filename}' downloaded successfully!")
+                        else:
+                            print(f"Failed to download '{filename}'. Status code: {response.status_code}")
+                    except requests.exceptions.RequestException as e:
+                        print(f"An error occurred while downloading '{filename}': {e}")
+            elif cmd == "VIDEO MANAGER":
+                print("Welcome to the Video Manager!")
+                input("Select what you want to do.")
+                print("1 = Generate a thumbnail for a video")
+                print("2 = Comment something on a video")
+                if input == 1:
+                    Thumbput = input("What is your video about?")
+                    def generate_thumbnail():
+                        prompt = f"Generate a thumbnail about a video that is about {Thumbput}"
+                        response = ChatCompletion.create(
+                            model="Flux",
+                            messages=[{"role": "user", "content": prompt}]
+                        )
+
+            elif cmd == "HALL OF FAME":
+                print(colored("😎😮‍💨 These are the people that helped support the channel by subscribing to my chanel 64883Z 🤯🤫:", "green"))
+                print(colored("🤯 Joe Greer 💸", "green"))
+                print(colored("😤 Diana Drumea ✨", "green"))
+                print(colored("✌️ GameBlox_Youtube 🤑", "green"))
+                print(colored("🤠 MASTER NINTENDO 🤔", "green"))
+                print(colored("😎 CountryballHacker 💀", "green"))
+                print(colored("🗣️ S.V. 🔥", "green"))
+                print(colored("😮‍💨 Ze Carlos 😮", "green"))
+                print(colored("📸 Juan - 🚨", "green"))
+                print(colored("😈 Mayhem Shane 👿", "green"))
+                print(colored("🇪🇸 ANGEL TRIANERO TV 🧔", "green"))
+                print(colored("📺 KS News 🗞️", "green"))
+                print(colored("📲 JairoRus Rusel 🤯", "green"))
+                print(colored("", "green"))
+                print(colored("", "green"))
+
+
+
+                
         if time.time() - last_sweep >= 600:
             run_spam_sweep(youtube, channel_id, scan_all)
             last_sweep = time.time()
