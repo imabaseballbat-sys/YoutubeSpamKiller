@@ -210,15 +210,7 @@ def load_credentials():
             os.remove(TOKEN_PICKLE)
         return None
 
-# Your main script will call these functions as needed.
-# For example:
-# token = load_credentials()
-# if not token:
-#     # Prompt for authorization and then call save_credentials
-#     creds = flow.run_local_server(port=0)
-#     save_credentials(creds)
-#     token = creds
-# Encrypt and save
+
 encrypted_data = Fernet(key).encrypt(pickle.dumps(test_data))
 with open(temp_filepath, "wb") as f:
     f.write(encrypted_data)
