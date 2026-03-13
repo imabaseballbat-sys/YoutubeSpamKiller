@@ -146,7 +146,6 @@ def load_credentials():
         creds = pickle.loads(Fernet(fernet_key).decrypt(encrypted_token))
 
         if saved_face_embedding is not None:
-            # ...face verification logic...
             pass
 
         print("✅ Credentials loaded successfully.")
